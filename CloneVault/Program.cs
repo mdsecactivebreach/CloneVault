@@ -80,8 +80,6 @@ namespace CloneVault
                     var buffer = Marshal.AllocHGlobal(attribSize);
                     Marshal.Copy(cred.Attributes, rawData, (int)0, (int)AttributeCount * attribSize);
 
-
-
                     for (int i = 0; i < AttributeCount; i++)
                     {
                         Marshal.Copy(rawData, i * attribSize, buffer, attribSize);
@@ -100,6 +98,8 @@ namespace CloneVault
 
                         attribs[i] = attrib;
                     }
+
+                    Marshal.FreeHGlobal(buffer);
                 }
 
                 string TargetAlias = Marshal.PtrToStringUni(cred.TargetAlias);
@@ -131,14 +131,13 @@ namespace CloneVault
             IntPtr nCredPtr;
             bool read = CredRead(applicationName, CredentialType.Generic, 0, out nCredPtr);
 
-            if (!read)
-            {
-                Console.WriteLine("Failed to read {0}", applicationName);
-            }
-
             if (read)
             {
                 ExportCredentialPtr(nCredPtr);
+            }
+            else
+            {
+                Console.WriteLine("Failed to read {0}", applicationName);
             }
         }
 
@@ -262,6 +261,7 @@ namespace CloneVault
                 Console.WriteLine(lastError);
                 throw new Win32Exception(lastError);
             }
+            CredFree(pCredentials);
         }
 
         public static void ExportAllCredentials()
@@ -297,6 +297,7 @@ namespace CloneVault
                 Console.WriteLine(lastError);
                 throw new Win32Exception(lastError);
             }
+            CredFree(pCredentials);
         }
 
         [DllImport("Advapi32.dll", EntryPoint = "CredReadW", CharSet = CharSet.Unicode, SetLastError = true)]
