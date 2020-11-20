@@ -168,8 +168,9 @@ namespace CloneVault
             new_cred.AttributeCount = export.AttributeCount;
 
             var asize = Marshal.SizeOf(typeof(NativeCredentialAttribute));
-            IntPtr ptrattribs = Marshal.AllocHGlobal(export.AttributesLength);
+
             byte[] oadata = new byte[export.AttributesLength];
+            List<IntPtr> attributesToFree = new List<IntPtr>();
 
             for (int n = 0; n < export.AttributeCount; n++)
             {
@@ -183,24 +184,36 @@ namespace CloneVault
                 nativeAttrib.ValueSize = attrib.ValueSize;
 
                 IntPtr ptrattribvalue = Marshal.AllocHGlobal((int)attrib.ValueSize);
+                attributesToFree.Add(ptrattribvalue);
                 Marshal.Copy(attrib.Value, 0, ptrattribvalue, (int)attrib.ValueSize);
 
                 nativeAttrib.Value = ptrattribvalue;
 
                 var attrbuff = Marshal.AllocHGlobal(asize);
+                attributesToFree.Add(attrbuff);
                 Marshal.StructureToPtr(nativeAttrib, attrbuff, false);
                 Marshal.Copy(attrbuff, oadata, n * asize, asize);
-
             }
 
-            GCHandle pinned = default(GCHandle);
-            pinned = GCHandle.Alloc(oadata, GCHandleType.Pinned);
+            GCHandle pinnedAttributes = default(GCHandle);
+            pinnedAttributes = GCHandle.Alloc(oadata, GCHandleType.Pinned);
 
-            new_cred.Attributes = pinned.AddrOfPinnedObject();
+            new_cred.Attributes = pinnedAttributes.AddrOfPinnedObject();
             new_cred.TargetAlias = Marshal.StringToCoTaskMemUni(export.TargetAlias);
             new_cred.UserName = Marshal.StringToCoTaskMemUni(export.UserName);
 
             bool written = CredWrite(ref new_cred, 0);
+
+            Marshal.FreeCoTaskMem(new_cred.TargetAlias);
+            Marshal.FreeCoTaskMem(new_cred.TargetName);
+            Marshal.FreeCoTaskMem(new_cred.UserName);
+            Marshal.FreeCoTaskMem(new_cred.Comment);
+            Marshal.FreeHGlobal(unmanagedPointer);
+            pinnedAttributes.Free();
+            foreach(IntPtr attributeToFree in attributesToFree)
+            {
+                Marshal.FreeHGlobal(attributeToFree);
+            }
 
             if (!written)
             {
@@ -208,13 +221,7 @@ namespace CloneVault
                 throw new Exception(string.Format("CredWrite failed with the error code {0}.", lastError));
             }
 
-
             Console.WriteLine("[*] Finished importing credential");
-
-            Marshal.FreeCoTaskMem(new_cred.Attributes);
-            Marshal.FreeCoTaskMem(new_cred.TargetAlias);
-            Marshal.FreeCoTaskMem(new_cred.TargetName);
-            Marshal.FreeCoTaskMem(new_cred.UserName);
         }
 
         private static Credential ReadCredential(CREDENTIAL credential)
@@ -228,51 +235,6 @@ namespace CloneVault
             }
 
             return new Credential(credential.Type, applicationName, userName, secret);
-        }
-
-        public static void WriteCredential(string applicationName, string userName, byte[] secret, string commment)
-        {
-            byte[] byteArray = secret;
-            // XP and Vista: 512; 
-            // 7 and above: 5*512
-            if (Environment.OSVersion.Version < new Version(6, 1) /* Windows 7 */)
-            {
-                if (byteArray != null && byteArray.Length > 512)
-                    throw new ArgumentOutOfRangeException("secret", "The secret message has exceeded 512 bytes.");
-            }
-            else
-            {
-                if (byteArray != null && byteArray.Length > 512 * 5)
-                    throw new ArgumentOutOfRangeException("secret", "The secret message has exceeded 2560 bytes.");
-            }
-
-            CREDENTIAL credential = new CREDENTIAL();
-            credential.AttributeCount = 0;
-            credential.Attributes = IntPtr.Zero;
-            credential.Comment = Marshal.StringToCoTaskMemUni(commment);
-            credential.TargetAlias = IntPtr.Zero;
-            credential.Type = CredentialType.Generic;
-            credential.Persist = (uint)CredentialPersistence.LocalMachine;
-            credential.CredentialBlobSize = (uint)(byteArray == null ? 0 : byteArray.Length);
-            credential.TargetName = Marshal.StringToCoTaskMemUni(applicationName);
-
-            IntPtr unmanagedPointer = Marshal.AllocHGlobal(byteArray.Length);
-            Marshal.Copy(byteArray, 0, unmanagedPointer, byteArray.Length);
-
-            credential.CredentialBlob = unmanagedPointer;
-            credential.UserName = Marshal.StringToCoTaskMemUni(userName ?? Environment.UserName);
-
-            bool written = CredWrite(ref credential, 0);
-            Marshal.FreeCoTaskMem(credential.TargetName);
-            Marshal.FreeCoTaskMem(credential.CredentialBlob);
-            Marshal.FreeCoTaskMem(credential.UserName);
-            Marshal.FreeHGlobal(unmanagedPointer);
-
-            if (!written)
-            {
-                int lastError = Marshal.GetLastWin32Error();
-                throw new Exception(string.Format("CredWrite failed with the error code {0}.", lastError));
-            }
         }
 
         public static void EnumerateCrendentials()
@@ -460,14 +422,6 @@ namespace CloneVault
 
     class Program
     {
-
-
-        static void WriteCred(string name, string username, byte[] password, string comment)
-        {
-
-            CredentialManager.WriteCredential(name, username, password, comment);
-        }
-
         static void Main(string[] args)
         {
 
