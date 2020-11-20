@@ -243,25 +243,30 @@ namespace CloneVault
             int count;
             IntPtr pCredentials;
             bool ret = CredEnumerate(null, 1, out count, out pCredentials);
-            if (ret)
-            {
-                for (int n = 0; n < count; n++)
-                {
-                    IntPtr credential = Marshal.ReadIntPtr(pCredentials, n * Marshal.SizeOf(typeof(IntPtr)));
-                    Credential cred = ReadCredential((CREDENTIAL)Marshal.PtrToStructure(credential, typeof(CREDENTIAL))); 
-                    if (cred.CredentialType == CredentialType.Generic)
-                    {
-                        Console.WriteLine("[-] {0}", cred.ApplicationName);
-                    }
-                }
-            }
-            else
+            if (!ret)
             {
                 int lastError = Marshal.GetLastWin32Error();
                 Console.WriteLine(lastError);
                 throw new Win32Exception(lastError);
             }
-            CredFree(pCredentials);
+            try
+            {
+                for (int n = 0; n < count; n++)
+                {
+                    IntPtr credential = Marshal.ReadIntPtr(pCredentials, n * Marshal.SizeOf(typeof(IntPtr)));
+                    Credential cred = ReadCredential((CREDENTIAL)Marshal.PtrToStructure(credential, typeof(CREDENTIAL)));
+                    if (cred.CredentialType == CredentialType.Generic)
+                    {
+                        Console.WriteLine("[-] {0}", cred.ApplicationName);
+                    }
+                }
+                CredFree(pCredentials);
+            }
+            catch
+            {
+                CredFree(pCredentials);
+                throw;
+            }
         }
 
         public static void ExportAllCredentials()
@@ -271,7 +276,13 @@ namespace CloneVault
             int count;
             IntPtr pCredentials;
             bool ret = CredEnumerate(null, 1, out count, out pCredentials);
-            if (ret)
+            if (!ret)
+            {
+                int lastError = Marshal.GetLastWin32Error();
+                Console.WriteLine(lastError);
+                throw new Win32Exception(lastError);
+            }
+            try
             {
                 for (int n = 0; n < count; n++)
                 {
@@ -290,14 +301,13 @@ namespace CloneVault
                         Console.WriteLine("");
                     }
                 }
+                CredFree(pCredentials);
             }
-            else
+            catch
             {
-                int lastError = Marshal.GetLastWin32Error();
-                Console.WriteLine(lastError);
-                throw new Win32Exception(lastError);
+                CredFree(pCredentials);
+                throw;
             }
-            CredFree(pCredentials);
         }
 
         [DllImport("Advapi32.dll", EntryPoint = "CredReadW", CharSet = CharSet.Unicode, SetLastError = true)]
